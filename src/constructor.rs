@@ -30,11 +30,13 @@ pub unsafe fn lean_alloc_ctor(
             && num_objs < LEAN_MAX_CTOR_FIELDS
             && scalar_sz < LEAN_MAX_CTOR_SCALARS_SIZE
     );
-    let o = lean_alloc_ctor_memory(
-        core::mem::size_of::<lean_ctor_object>() as c_uint
-            + (core::mem::size_of::<*const ()>() as c_uint) * num_objs
-            + scalar_sz,
-    );
+    let o = lean_alloc_ctor_memory(lean_usize_add_checked(
+        lean_usize_add_checked(
+            core::mem::size_of::<lean_ctor_object>(),
+            lean_usize_mul_checked(core::mem::size_of::<*const ()>(), num_objs as usize),
+        ),
+        scalar_sz as usize,
+    ) as c_uint);
     lean_set_st_header(o, tag, num_objs);
     o
 }
@@ -43,6 +45,19 @@ pub unsafe fn lean_alloc_ctor(
 pub unsafe fn lean_ctor_get(o: b_lean_obj_arg, i: c_uint) -> b_lean_obj_res {
     debug_assert!(i < lean_ctor_num_objs(o));
     *lean_ctor_obj_cptr(o).add(i as usize)
+}
+
+#[inline]
+pub unsafe fn lean_dec_ref_known(o: *mut lean_object, objs: c_uint) {
+    debug_assert!(!lean_is_scalar(o));
+    if lean_is_exclusive(o) {
+        for i in 0..objs {
+            lean_dec(lean_ctor_get(o, i));
+        }
+        lean_free_object(o);
+    } else {
+        lean_dec_ref(o);
+    }
 }
 
 #[inline(always)]
@@ -61,7 +76,11 @@ pub unsafe fn lean_ctor_set_tag(o: b_lean_obj_arg, new_tag: u8) {
 pub unsafe fn lean_ctor_release(o: b_lean_obj_arg, i: c_uint) {
     debug_assert!(i < lean_ctor_num_objs(o));
     let objs = lean_ctor_obj_cptr(o);
-    lean_dec(*objs.add(1));
+    lean_dec(*objs.add(i as usize));
+    // Note: This assignment is crucial. `lean_ctor_release` is called when we are preparing a
+    // `reset` for a unique object. However, in some control paths the object might not be able to
+    // be reused. In these paths we just call `dec` on the object. In this situation not having this
+    // write would cause a use-after free as we would try to `lean_dec(objs[i])` again.
     *objs.add(i as usize) = lean_box(0)
 }
 

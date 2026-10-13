@@ -75,5 +75,6 @@ extern "C" {
     pub fn lean_byte_array_mk(a: lean_obj_arg) -> lean_obj_res;
     pub fn lean_byte_array_data(a: lean_obj_arg) -> lean_obj_res;
     pub fn lean_copy_byte_array(a: lean_obj_arg) -> lean_obj_res;
+    pub fn lean_byte_array_hash(a: b_lean_obj_arg) -> u64;
     pub fn lean_byte_array_push(a: lean_obj_arg, b: u8) -> lean_obj_res;
 }

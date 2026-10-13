@@ -3,9 +3,10 @@ use crate::*;
 
 #[inline]
 pub unsafe fn lean_alloc_array(size: usize, capacity: usize) -> *mut lean_object {
-    let o = lean_alloc_object(
-        core::mem::size_of::<lean_array_object>() + core::mem::size_of::<*mut ()>() * capacity,
-    );
+    let o = lean_alloc_object(lean_usize_add_checked(
+        core::mem::size_of::<lean_array_object>(),
+        lean_usize_mul_checked(core::mem::size_of::<*mut ()>(), capacity),
+    ));
     lean_set_st_header(o as *mut _, LeanArray as u32, 0);
     (raw_field!(o, lean_array_object, m_size) as *mut usize).write(size);
     (raw_field!(o, lean_array_object, m_capacity) as *mut usize).write(capacity);

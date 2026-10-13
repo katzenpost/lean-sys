@@ -34,6 +34,11 @@ pub unsafe fn lean_array_uget(a: b_lean_obj_arg, i: usize) -> lean_obj_res {
 }
 
 #[inline(always)]
+pub unsafe fn lean_array_uget_borrowed(a: b_lean_obj_arg, i: usize) -> b_lean_obj_res {
+    lean_array_get_core(a, i)
+}
+
+#[inline(always)]
 pub unsafe fn lean_array_fget(a: b_lean_obj_arg, i: b_lean_obj_arg) -> lean_obj_res {
     lean_array_uget(a, lean_unbox(i))
 }
@@ -45,14 +50,13 @@ pub unsafe fn lean_array_fget_borrowed(a: b_lean_obj_arg, i: b_lean_obj_arg) -> 
 
 #[inline]
 pub unsafe fn lean_array_get(
-    def_val: lean_obj_arg,
+    def_val: b_lean_obj_arg,
     a: b_lean_obj_arg,
     i: b_lean_obj_arg,
 ) -> lean_obj_res {
     if lean_is_scalar(i) {
         let idx = lean_unbox(i);
         if idx < lean_array_size(a) {
-            lean_dec(def_val);
             return lean_array_uget(a, idx);
         }
     }
@@ -60,19 +64,19 @@ pub unsafe fn lean_array_get(
     i > LEAN_MAX_SMALL_NAT == MAX_UNSIGNED >> 1
     but each array entry is 8 bytes in 64-bit machines and 4 in 32-bit ones.
     In both cases, we would be out-of-memory. */
+    lean_inc(def_val);
     lean_array_get_panic(def_val)
 }
 
 #[inline]
 pub unsafe fn lean_array_get_borrowed(
-    def_val: lean_obj_arg,
+    def_val: b_lean_obj_arg,
     a: b_lean_obj_arg,
     i: b_lean_obj_arg,
 ) -> lean_obj_res {
     if lean_is_scalar(i) {
         let idx = lean_unbox(i);
         if idx < lean_array_size(a) {
-            lean_dec(def_val);
             return lean_array_get_core(a, idx);
         }
     }
@@ -80,12 +84,8 @@ pub unsafe fn lean_array_get_borrowed(
     i > LEAN_MAX_SMALL_NAT == MAX_UNSIGNED >> 1
     but each array entry is 8 bytes in 64-bit machines and 4 in 32-bit ones.
     In both cases, we would be out-of-memory. */
+    lean_inc(def_val);
     lean_array_get_panic(def_val)
-}
-
-#[inline(always)]
-pub unsafe fn lean_copy_array(a: lean_obj_arg) -> lean_obj_res {
-    lean_copy_expand_array(a, false)
 }
 
 #[inline(always)]
@@ -93,7 +93,7 @@ pub unsafe fn lean_ensure_exclusive_array(a: lean_obj_arg) -> lean_obj_res {
     if lean_is_exclusive(a) {
         a
     } else {
-        lean_copy_array(a)
+        lean_copy_expand_array_nonlinear(a, false)
     }
 }
 
@@ -183,6 +183,9 @@ pub unsafe fn lean_array_swap(
 extern "C" {
     pub fn lean_array_get_panic(def_val: lean_obj_arg) -> lean_obj_res;
     pub fn lean_copy_expand_array(a: lean_obj_arg, expand: bool) -> lean_obj_res;
+    /// Equivalent to [`lean_copy_expand_array`] but used as a gadget to spot `Array`
+    /// non-linearities in profiles.
+    pub fn lean_copy_expand_array_nonlinear(a: lean_obj_arg, expand: bool) -> lean_obj_res;
     pub fn lean_array_set_panic(a: lean_obj_arg, v: lean_obj_arg) -> lean_obj_res;
     pub fn lean_array_push(a: lean_obj_arg, v: lean_obj_arg) -> *mut lean_object;
     pub fn lean_mk_array(n: lean_obj_arg, v: lean_obj_arg) -> *mut lean_object;

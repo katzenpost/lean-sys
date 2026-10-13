@@ -119,7 +119,16 @@ pub fn lean_uint64_to_usize(a: u64) -> usize {
     a as usize
 }
 
+#[inline]
+pub fn lean_uint64_mix_hash(h: u64, k: u64) -> u64 {
+    let m: u64 = 0xc6a4a7935bd1e995;
+    let r = 47;
+    let mut k = k.wrapping_mul(m);
+    k ^= k >> r;
+    k ^= m;
+    (h ^ k).wrapping_mul(m)
+}
+
 extern "C" {
     pub fn lean_uint64_of_big_nat(a: b_lean_obj_arg) -> u64;
-    pub fn lean_uint64_mix_hash(a1: u64, a2: u64) -> u64;
 }

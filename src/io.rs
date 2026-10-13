@@ -8,6 +8,12 @@ pub const fn lean_io_mk_world() -> lean_obj_res {
 }
 
 #[inline(always)]
+pub unsafe fn lean_void_mk(a: lean_obj_arg) -> lean_obj_res {
+    lean_dec(a);
+    lean_box(0)
+}
+
+#[inline(always)]
 pub unsafe fn lean_io_result_is_ok(r: b_lean_obj_arg) -> bool {
     lean_ptr_tag(r) == 0
 }
@@ -40,17 +46,15 @@ pub unsafe fn lean_io_result_take_value(r: lean_obj_arg) -> lean_obj_res {
 
 #[inline(always)]
 pub unsafe fn lean_io_result_mk_ok(a: lean_obj_arg) -> lean_obj_res {
-    let r = lean_alloc_ctor(0, 2, 0);
+    let r = lean_alloc_ctor(0, 1, 0);
     lean_ctor_set(r, 0, a);
-    lean_ctor_set(r, 1, lean_box(0));
     r
 }
 
 #[inline(always)]
 pub unsafe fn lean_io_result_mk_error(a: lean_obj_arg) -> lean_obj_res {
-    let r = lean_alloc_ctor(1, 2, 0);
+    let r = lean_alloc_ctor(1, 1, 0);
     lean_ctor_set(r, 0, a);
-    lean_ctor_set(r, 1, lean_box(0));
     r
 }
 

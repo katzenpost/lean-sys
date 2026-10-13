@@ -29,15 +29,26 @@ pub unsafe fn lean_alloc_closure(
 ) -> lean_obj_res {
     debug_assert!(arity > 0);
     debug_assert!(num_fixed < arity);
-    let o = lean_alloc_small_object(
-        core::mem::size_of::<lean_closure_object>() as c_uint
-            + core::mem::size_of::<*const ()>() as c_uint * num_fixed,
-    );
+    let o = lean_alloc_object(lean_usize_add_checked(
+        core::mem::size_of::<lean_closure_object>(),
+        lean_usize_mul_checked(core::mem::size_of::<*const ()>(), num_fixed as usize),
+    ));
     lean_set_st_header(o, LeanClosure as u32, 0);
     (raw_field!(o, lean_closure_object, m_fun) as *mut *mut c_void).write(fun);
     (raw_field!(o, lean_closure_object, m_arity) as *mut u16).write(arity as u16);
     (raw_field!(o, lean_closure_object, m_num_fixed) as *mut u16).write(num_fixed as u16);
     o
+}
+
+#[inline]
+pub unsafe fn lean_closure_byte_size(o: *mut lean_object) -> usize {
+    core::mem::size_of::<lean_closure_object>()
+        + core::mem::size_of::<*const ()>() * lean_closure_num_fixed(o) as usize
+}
+
+#[inline]
+pub unsafe fn lean_closure_data_byte_size(o: *mut lean_object) -> usize {
+    lean_closure_byte_size(o)
 }
 
 #[inline(always)]

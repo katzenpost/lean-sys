@@ -118,5 +118,4 @@ pub fn lean_usize_to_uint64(a: usize) -> u64 {
 
 extern "C" {
     pub fn lean_usize_of_big_nat(a: b_lean_obj_arg) -> usize;
-    pub fn lean_usize_mix_hash(a1: usize, a2: usize) -> usize;
 }

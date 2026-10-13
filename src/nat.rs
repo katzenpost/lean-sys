@@ -225,6 +225,9 @@ extern "C" {
     pub fn lean_nat_pow(a1: *mut lean_object, a2: *mut lean_object) -> *mut lean_object;
     pub fn lean_nat_gcd(a1: *mut lean_object, a2: *mut lean_object) -> *mut lean_object;
     pub fn lean_nat_log2(a: *mut lean_object) -> *mut lean_object;
+    /// Upper bound on the size in bytes of the representation of `a` (one word for scalars).
+    /// Returns a raw `usize`, not a boxed `Nat`.
+    pub fn lean_nat_size_in_bytes(a: b_lean_obj_arg) -> usize;
 }
 
 #[cfg(test)]

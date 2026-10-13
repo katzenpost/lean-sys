@@ -66,4 +66,11 @@ extern "C" {
     pub fn lean_io_cancel_core(t: b_lean_obj_arg);
     /** primitive for implementing `IO.getTaskState : Task a -> IO TaskState` */
     pub fn lean_io_get_task_state_core(t: b_lean_obj_arg) -> u8;
+    /** primitive for implementing `IO.waitAny : List (Task a) -> IO (Task a)` */
+    pub fn lean_io_wait_any_core(task_list: b_lean_obj_arg) -> b_lean_obj_res;
 }
+
+/* Task state values returned by `lean_io_get_task_state_core`, matching `IO.TaskState`. */
+pub const LEAN_TASK_STATE_WAITING: u8 = 0;
+pub const LEAN_TASK_STATE_RUNNING: u8 = 1;
+pub const LEAN_TASK_STATE_FINISHED: u8 = 2;

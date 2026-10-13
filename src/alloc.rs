@@ -23,31 +23,11 @@ unsafe impl GlobalAlloc for LeanAlloc {
         let offset = layout.size().wrapping_neg() & (alignment - 1);
         let size = layout.size() + offset;
 
-        #[cfg(feature = "small_allocator")]
-        if alignment == LEAN_OBJECT_SIZE_DELTA && size <= crate::LEAN_MAX_SMALL_OBJECT_SIZE as usize
-        {
-            let slot_idx = crate::lean_get_slot_idx(size as _);
-            return crate::lean_alloc_small(size as _, slot_idx).cast();
-        }
-
         lean_inc_heartbeat();
         aligned_alloc(alignment, size)
     }
 
-    #[allow(unused_variables)]
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        #[cfg(feature = "small_allocator")]
-        {
-            let alignment = layout.align().max(LEAN_OBJECT_SIZE_DELTA);
-            let offset = layout.size().wrapping_neg() & (alignment - 1);
-            let size = layout.size() + offset;
-            if alignment == LEAN_OBJECT_SIZE_DELTA
-                && size <= crate::LEAN_MAX_SMALL_OBJECT_SIZE as usize
-            {
-                return crate::lean_free_small(ptr.cast());
-            }
-        }
-
+    unsafe fn dealloc(&self, ptr: *mut u8, _layout: Layout) {
         free(ptr);
     }
 }

@@ -2,10 +2,9 @@
 use crate::*;
 
 extern "C" {
-    pub fn lean_st_mk_ref(_: lean_obj_arg, _: lean_obj_arg) -> lean_obj_res;
-    pub fn lean_st_mk_ref_get(_: b_lean_obj_arg, _: lean_obj_arg) -> lean_obj_res;
-    pub fn lean_st_mk_ref_set(_: b_lean_obj_arg, _: lean_obj_arg, _: lean_obj_arg) -> lean_obj_res;
-    pub fn lean_st_mk_ref_reset(_: b_lean_obj_arg, _: lean_obj_arg) -> lean_obj_res;
-    pub fn lean_st_mk_ref_swap(_: b_lean_obj_arg, _: lean_obj_arg, _: lean_obj_arg)
-        -> lean_obj_res;
+    pub fn lean_st_mk_ref(a: lean_obj_arg) -> lean_obj_res;
+    pub fn lean_st_ref_get(r: b_lean_obj_arg) -> lean_obj_res;
+    pub fn lean_st_ref_set(r: b_lean_obj_arg, a: lean_obj_arg) -> lean_obj_res;
+    pub fn lean_st_ref_reset(r: b_lean_obj_arg) -> lean_obj_res;
+    pub fn lean_st_ref_swap(r: b_lean_obj_arg, a: lean_obj_arg) -> lean_obj_res;
 }

@@ -60,23 +60,29 @@ fn main() {
     } else if cfg!(feature = "extern") {
         println!("cargo:rustc-link-search={}/lib/lean", lean_dir.display());
         println!("cargo:rustc-link-search={}/lib", lean_dir.display());
-        for lib in ["Lean", "Init", "leanrt", "leancpp", "gmp", "c++", "c++abi"] {
+        for lib in [
+            "Lean", "Std", "Init", "leanrt", "leancpp", "gmp", "uv", "c++", "c++abi",
+        ] {
             println!("cargo:rustc-link-lib=static={lib}");
         }
     } else {
         println!("cargo:rustc-link-search={}/lib", lean_dir.display());
         println!("cargo:rustc-link-search={}/lib/lean", lean_dir.display());
-        for libs in [["Lean", "leancpp"], ["Init", "leanrt"]] {
+        // The order of `leanc --print-ldflags`
+        let group = |libs: &[&str]| {
             println!("cargo:rustc-link-arg=-Wl,--start-group");
             for lib in libs {
                 println!("cargo:rustc-link-lib=static={lib}");
             }
             println!("cargo:rustc-link-arg=-Wl,--end-group");
-        }
-        for lib in ["Lake", "c++", "c++abi"] {
+        };
+        group(&["leancpp", "Lean"]);
+        println!("cargo:rustc-link-lib=static=Std");
+        group(&["Init", "leanrt"]);
+        for lib in ["c++", "c++abi", "Lake"] {
             println!("cargo:rustc-link-lib=static={lib}");
         }
-        for lib in ["m", "dl", "gmp"] {
+        for lib in ["gmp", "uv", "ssl", "crypto", "pthread", "dl", "rt", "m"] {
             println!("cargo:rustc-link-lib=dylib={lib}");
         }
     }

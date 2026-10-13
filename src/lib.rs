@@ -25,6 +25,7 @@ pub mod int;
 pub mod io;
 pub mod libuv;
 pub mod nat;
+pub mod once;
 pub mod panic;
 pub mod primitive;
 pub mod sarray;
@@ -44,6 +45,7 @@ pub use int::*;
 pub use io::*;
 pub use libuv::*;
 pub use nat::*;
+pub use once::*;
 pub use primitive::*;
 pub use sarray::*;
 pub use share_common::*;
@@ -52,7 +54,6 @@ pub use task::*;
 pub use thread::*;
 pub use thunk::*;
 
-pub const LEAN_SMALL_ALLOCATOR: bool = cfg!(feature = "small_allocator");
 pub const LEAN_MIMALLOC: bool = cfg!(feature = "mimalloc");
 pub const LEAN_CLOSURE_MAX_ARGS: u32 = 16;
 pub const LEAN_OBJECT_SIZE_DELTA: usize = 8;
@@ -94,6 +95,13 @@ pub unsafe fn c_int_load(p: *const c_int, order: Ordering) -> c_int {
 
 mod types;
 pub use types::*;
+
+#[cfg(feature = "mimalloc")]
+extern "C" {
+    // The Lean runtime's own mimalloc, so objects allocated here can be freed by the runtime.
+    fn mi_malloc_small(size: usize) -> *mut c_void;
+    fn mi_free(p: *mut c_void);
+}
 
 #[inline]
 pub fn lean_is_big_object_tag(tag: u8) -> bool {
@@ -146,6 +154,32 @@ pub const fn lean_align(v: usize, a: usize) -> usize {
 }
 
 #[inline]
+pub fn lean_usize_mul_would_overflow(a: usize, b: usize) -> bool {
+    a.checked_mul(b).is_none()
+}
+
+#[inline]
+pub fn lean_usize_add_would_overflow(a: usize, b: usize) -> bool {
+    a.checked_add(b).is_none()
+}
+
+#[inline]
+pub fn lean_usize_mul_checked(a: usize, b: usize) -> usize {
+    match a.checked_mul(b) {
+        Some(r) => r,
+        None => unsafe { lean_internal_panic_overflow() },
+    }
+}
+
+#[inline]
+pub fn lean_usize_add_checked(a: usize, b: usize) -> usize {
+    match a.checked_add(b) {
+        Some(r) => r,
+        None => unsafe { lean_internal_panic_overflow() },
+    }
+}
+
+#[inline]
 pub fn lean_get_slot_idx(sz: c_uint) -> c_uint {
     debug_assert_ne!(sz, 0);
     debug_assert_eq!(lean_align(sz as usize, LEAN_OBJECT_SIZE_DELTA), sz as usize);
@@ -154,46 +188,36 @@ pub fn lean_get_slot_idx(sz: c_uint) -> c_uint {
 
 #[inline]
 pub unsafe fn lean_alloc_small_object(sz: c_uint) -> *mut lean_object {
-    if LEAN_SMALL_ALLOCATOR {
-        let sz = lean_align(sz as usize, LEAN_OBJECT_SIZE_DELTA) as c_uint;
-        let slot_idx = lean_get_slot_idx(sz);
-        debug_assert!(sz <= LEAN_MAX_SMALL_OBJECT_SIZE);
-        lean_alloc_small(sz, slot_idx).cast()
-    } else {
-        lean_inc_heartbeat();
-        if LEAN_MIMALLOC {
-            // HACK: emulate behavior of small allocator to avoid `leangz` breakage for now
-            let sz = lean_align(sz as usize, LEAN_OBJECT_SIZE_DELTA) as c_uint;
-            #[cfg(feature = "libmimalloc-sys")]
-            let mem = libmimalloc_sys::mi_malloc_small(sz as usize);
-            #[cfg(not(feature = "libmimalloc-sys"))]
-            let mem = core::ptr::null_mut::<c_void>();
-            if mem.is_null() {
-                lean_internal_panic_out_of_memory()
-            }
-            let o = mem.cast::<lean_object>();
-            (*o).m_cs_sz = sz as u16;
-            o
-        } else {
-            let mem = libc::malloc(size_of::<usize>() + sz as usize) as *mut usize;
-            if mem.is_null() {
-                lean_internal_panic_out_of_memory()
-            }
-            *mem = sz as usize;
-            mem.add(1).cast()
+    lean_inc_heartbeat();
+    #[cfg(feature = "mimalloc")]
+    {
+        // HACK: emulate behavior of small allocator to avoid `leangz` breakage for now
+        let sz = lean_align(sz as usize, LEAN_OBJECT_SIZE_DELTA);
+        let mem = mi_malloc_small(sz);
+        if mem.is_null() {
+            lean_internal_panic_out_of_memory()
         }
+        let o = mem.cast::<lean_object>();
+        (*o).m_cs_sz = sz as u16;
+        o
+    }
+    #[cfg(not(feature = "mimalloc"))]
+    {
+        let mem = libc::malloc(size_of::<usize>() + sz as usize) as *mut usize;
+        if mem.is_null() {
+            lean_internal_panic_out_of_memory()
+        }
+        *mem = sz as usize;
+        mem.add(1).cast()
     }
 }
 
 #[inline]
 pub unsafe fn lean_alloc_ctor_memory(sz: c_uint) -> *mut lean_object {
-    if LEAN_SMALL_ALLOCATOR {
-        let sz1 = lean_align(sz as usize, LEAN_OBJECT_SIZE_DELTA) as c_uint;
-        let slot_idx = lean_get_slot_idx(sz1);
-        debug_assert!(sz1 <= LEAN_MAX_SMALL_OBJECT_SIZE);
-        let r = lean_alloc_small(sz1, slot_idx);
-        if sz1 > sz {
-            //TODO: "two structurally equal objects"?
+    if LEAN_MIMALLOC {
+        let sz1 = lean_align(sz as usize, LEAN_OBJECT_SIZE_DELTA);
+        let r = lean_alloc_small_object(sz);
+        if sz1 > sz as usize {
             /* Initialize last word.
             In our runtime `lean_object_byte_size` is always
             a multiple of the machine word size for constructors.
@@ -203,15 +227,7 @@ pub unsafe fn lean_alloc_ctor_memory(sz: c_uint) -> *mut lean_object {
             not affected by uninitialized data at the (sz1 - sz) last bytes.
             Otherwise, we may mistakenly assume to structurally equal
             objects are not identical because of this uninitialized memory. */
-            let end = (r as *mut u8).add(sz1 as usize) as *mut usize;
-            *end.sub(1) = 0;
-        }
-        r as *mut lean_object
-    } else if LEAN_MIMALLOC {
-        let sz1 = lean_align(sz as usize, LEAN_OBJECT_SIZE_DELTA) as c_uint;
-        let r = lean_alloc_small_object(sz1);
-        if sz1 > sz {
-            *r.byte_add(sz1 as usize).cast::<usize>().sub(1) = 0;
+            *r.byte_add(sz1).cast::<usize>().sub(1) = 0;
         }
         r
     } else {
@@ -221,9 +237,7 @@ pub unsafe fn lean_alloc_ctor_memory(sz: c_uint) -> *mut lean_object {
 
 #[inline(always)]
 pub unsafe fn lean_small_object_size(o: *mut lean_object) -> c_uint {
-    if LEAN_SMALL_ALLOCATOR {
-        lean_small_mem_size(o.cast())
-    } else if LEAN_MIMALLOC {
+    if LEAN_MIMALLOC {
         (*o).m_cs_sz as c_uint
     } else {
         *o.cast::<usize>().sub(1) as c_uint
@@ -232,17 +246,26 @@ pub unsafe fn lean_small_object_size(o: *mut lean_object) -> c_uint {
 
 #[inline(always)]
 pub unsafe fn lean_free_small_object(o: *mut lean_object) {
-    if LEAN_SMALL_ALLOCATOR {
-        lean_free_small(o.cast())
-    } else if LEAN_MIMALLOC {
-        #[cfg(feature = "libmimalloc-sys")]
-        libmimalloc_sys::mi_free(o.cast())
-    } else {
+    #[cfg(feature = "mimalloc")]
+    {
+        // We must NOT use `m_cs_sz` here as it is repurposed for the deletion list; as `mi_free_size`
+        // is no different from `mi_free` at the time of writing, we don't lose anything from that.
+        mi_free(o.cast())
+    }
+    #[cfg(not(feature = "mimalloc"))]
+    {
         extern "C" {
             fn free_sized(ptr: *mut c_void, _: usize);
         }
         let ptr = o.cast::<usize>().sub(1);
         free_sized(ptr.cast(), *ptr + size_of::<usize>());
+    }
+}
+
+#[inline]
+pub unsafe fn lean_del_object(o: *mut lean_object) {
+    if !lean_is_scalar(o) {
+        lean_free_object(o)
     }
 }
 
@@ -291,11 +314,28 @@ pub unsafe fn lean_get_rc_mt_addr(o: *mut lean_object) -> *mut c_int {
     raw_field!(o, lean_object, m_rc) as *mut c_int
 }
 
+/* Reference counts that over- or underflow the 32-bit counter land in a deeply negative "sticky" range, and
+the object is then frozen: it is never freed and its count is no longer adjusted.
+- once `rc <= LEAN_RC_STICKY_DROP`, drops (decrements) stop adjusting the count;
+- once `rc <= LEAN_RC_STICKY`, increments stop as well. */
+pub const LEAN_RC_STICKY: c_int = c_int::MIN + 0x1000_0000;
+pub const LEAN_RC_STICKY_DROP: c_int = c_int::MIN + 0x2000_0000;
+
+/// Largest `n` that [`lean_inc_ref_n`] adjusts the count by inline; above this it defers to
+/// [`lean_inc_ref_huge_n`], which either applies the whole `n` or leaves the object frozen.
+pub const LEAN_RC_INC_MAX: usize = 0x10000;
+
 #[inline]
 pub unsafe fn lean_inc_ref_n(o: *mut lean_object, n: usize) {
-    if lean_is_st(o) {
-        *(raw_field!(o, lean_object, m_rc) as *mut c_int) += n as c_int
-    } else if *raw_field!(o, lean_object, m_rc) != 0 {
+    if n > LEAN_RC_INC_MAX {
+        lean_inc_ref_huge_n(o, n);
+    } else if lean_is_st(o) {
+        // Wraps an overflowing single-threaded count into the sticky range.
+        let rc = lean_get_rc_mt_addr(o);
+        *rc = (*rc as c_uint).wrapping_add(n as c_uint) as c_int
+    } else if relaxed_rc_load(o) as c_uint > LEAN_RC_STICKY as c_uint {
+        // Read as unsigned, a persistent count (0) and a sticky count both fall below every live
+        // thread-shared count, so one comparison rejects both.
         (*lean_get_rc_mt_addr(o).cast::<AtomicU32>()).fetch_sub(n as c_uint, Ordering::Relaxed);
     }
 }
@@ -519,14 +559,16 @@ extern "C" {
     /// Enable/disable panic messages
     pub fn lean_set_panic_messages(flag: bool);
     pub fn lean_panic(msg: *const u8, force_stderr: bool);
-    pub fn lean_panic_fn(default_val: *mut lean_object, msg: *mut lean_object);
+    pub fn lean_panic_fn(default_val: *mut lean_object, msg: *mut lean_object) -> *mut lean_object;
+    pub fn lean_panic_fn_borrowed(
+        default_val: b_lean_obj_arg,
+        msg: *mut lean_object,
+    ) -> *mut lean_object;
     pub fn lean_internal_panic(msg: *const u8) -> !;
     pub fn lean_internal_panic_out_of_memory() -> !;
     pub fn lean_internal_panic_unreachable() -> !;
     pub fn lean_internal_panic_rc_overflow() -> !;
-    pub fn lean_alloc_small(sz: c_uint, slot_idx: c_uint) -> *mut c_void;
-    pub fn lean_free_small(p: *mut c_void);
-    pub fn lean_small_mem_size(p: *mut c_void) -> c_uint;
+    pub fn lean_internal_panic_overflow() -> !;
     pub fn lean_inc_heartbeat();
     pub fn lean_alloc_object(sz: usize) -> *mut lean_object;
     pub fn lean_free_object(o: *mut lean_object);
@@ -544,6 +586,9 @@ extern "C" {
     pub fn lean_object_data_byte_size(o: *mut lean_object) -> usize;
     #[cold]
     pub fn lean_dec_ref_cold(o: *mut lean_object);
+    /// Cold path of [`lean_inc_ref_n`] for increments above [`LEAN_RC_INC_MAX`].
+    #[cold]
+    pub fn lean_inc_ref_huge_n(o: *mut lean_object, n: usize);
     pub fn lean_mark_mt(o: *mut lean_object);
     pub fn lean_mark_persistent(o: *mut lean_object);
 }

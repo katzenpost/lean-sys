@@ -3,8 +3,10 @@ use crate::*;
 
 #[inline(always)]
 pub unsafe fn lean_alloc_string(size: usize, capacity: usize, len: usize) -> lean_obj_res {
-    let o = lean_alloc_object(core::mem::size_of::<lean_string_object>() + capacity)
-        as *mut lean_string_object;
+    let o = lean_alloc_object(lean_usize_add_checked(
+        core::mem::size_of::<lean_string_object>(),
+        capacity,
+    )) as *mut lean_string_object;
     lean_set_st_header(o as *mut _, LeanString as u32, 0);
     (raw_field!(o, lean_string_object, m_size) as *mut usize).write(size);
     (raw_field!(o, lean_string_object, m_capacity) as *mut usize).write(capacity);
@@ -104,6 +106,11 @@ pub unsafe fn lean_string_get_byte_fast(s: b_lean_obj_arg, i: b_lean_obj_arg) ->
 }
 
 #[inline(always)]
+pub unsafe fn lean_string_uget_byte_fast(s: b_lean_obj_arg, i: usize) -> u8 {
+    *lean_string_cstr(s).add(i)
+}
+
+#[inline(always)]
 pub unsafe fn lean_string_utf8_next_fast(s: b_lean_obj_arg, i: b_lean_obj_arg) -> lean_obj_res {
     let s = lean_string_cstr(s);
     let idx = lean_unbox(i);
@@ -143,4 +150,14 @@ extern "C" {
     pub fn lean_string_lt(s1: b_lean_obj_arg, s2: b_lean_obj_arg) -> bool;
     pub fn lean_string_hash(s: b_lean_obj_arg) -> u64;
     pub fn lean_string_of_usize(s: usize) -> lean_obj_res;
+    pub fn lean_string_compare(s1: b_lean_obj_arg, s2: b_lean_obj_arg) -> u8;
+    pub fn lean_string_memcmp(
+        s1: b_lean_obj_arg,
+        s2: b_lean_obj_arg,
+        lstart: b_lean_obj_arg,
+        rstart: b_lean_obj_arg,
+        len: b_lean_obj_arg,
+    ) -> u8;
+    pub fn lean_slice_hash(s: b_lean_obj_arg) -> u64;
+    pub fn lean_slice_dec_lt(s1: b_lean_obj_arg, s2: b_lean_obj_arg) -> u8;
 }
