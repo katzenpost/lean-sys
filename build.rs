@@ -9,6 +9,11 @@ fn main() {
         }
     }
 
+    // The toolchain's libraries are for the host; an Android build links its own runtime.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
+        return;
+    }
+
     // Step 1: Get lean directory
     // TODO: support overriding lean command and/or directory via environment variables?
     let lean_output = Command::new("lean")
