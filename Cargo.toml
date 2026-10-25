@@ -7,7 +7,7 @@ authors = [
     "Zhu Yifan <i@zhuyi.fan>"
 ]
 edition = "2021"
-description = "Bindings to Lean 4's C API, for Lean 4.33.1: Katzenpost's fork of lean-sys"
+description = "Bindings to Lean 4's C API, for Lean 4.35.0: Katzenpost's fork of lean-sys"
 repository = "https://github.com/katzenpost/lean-sys"
 license = "MIT OR Apache-2.0"
 keywords = ["lean", "math", "bindings"]

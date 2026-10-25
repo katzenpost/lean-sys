@@ -97,6 +97,34 @@ pub unsafe fn lean_ensure_exclusive_array(a: lean_obj_arg) -> lean_obj_res {
     }
 }
 
+#[inline(always)]
+pub unsafe fn lean_array_is_marked_linear(o: b_lean_obj_arg) -> bool {
+    debug_assert!(lean_is_array(o));
+    lean_is_marked_linear_core(o)
+}
+
+#[inline(always)]
+pub unsafe fn lean_array_mark_linear_core(o: u_lean_obj_arg) {
+    debug_assert!(lean_is_array(o));
+    lean_mark_linear_core(o)
+}
+
+#[inline]
+pub unsafe fn lean_array_mark_linear(a: lean_obj_arg) -> lean_obj_res {
+    let r = lean_ensure_exclusive_array(a);
+    lean_array_mark_linear_core(r);
+    r
+}
+
+#[inline]
+pub unsafe fn lean_array_propagate_mark(src: b_lean_obj_arg, dst: lean_obj_arg) -> lean_obj_res {
+    if !lean_array_is_marked_linear(src) {
+        dst
+    } else {
+        lean_array_mark_linear(dst)
+    }
+}
+
 #[inline]
 pub unsafe fn lean_array_uset(a: lean_obj_arg, i: usize, v: lean_obj_arg) -> *mut lean_object {
     let r = lean_ensure_exclusive_array(a);
@@ -184,7 +212,7 @@ extern "C" {
     pub fn lean_array_get_panic(def_val: lean_obj_arg) -> lean_obj_res;
     pub fn lean_copy_expand_array(a: lean_obj_arg, expand: bool) -> lean_obj_res;
     /// Equivalent to [`lean_copy_expand_array`] but used as a gadget to spot `Array`
-    /// non-linearities in profiles.
+    /// non-linearities in profiles. Panics if `a` is marked linear.
     pub fn lean_copy_expand_array_nonlinear(a: lean_obj_arg, expand: bool) -> lean_obj_res;
     pub fn lean_array_set_panic(a: lean_obj_arg, v: lean_obj_arg) -> lean_obj_res;
     pub fn lean_array_push(a: lean_obj_arg, v: lean_obj_arg) -> *mut lean_object;

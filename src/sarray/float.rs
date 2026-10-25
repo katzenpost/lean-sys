@@ -51,11 +51,7 @@ pub unsafe fn lean_float_array_fget(a: b_lean_obj_arg, i: b_lean_obj_arg) -> f64
 
 #[inline(always)]
 pub unsafe fn lean_float_array_uset(a: lean_obj_arg, i: usize, v: f64) -> *mut lean_object {
-    let r = if lean_is_exclusive(a) {
-        a
-    } else {
-        lean_copy_byte_array(a)
-    };
+    let r = lean_sarray_ensure_exclusive(a);
     let it = lean_float_array_cptr(r).add(i);
     *it = v;
     r
@@ -87,6 +83,5 @@ pub unsafe fn lean_float_array_fset(
 extern "C" {
     pub fn lean_float_array_mk(a: lean_obj_arg) -> lean_obj_res;
     pub fn lean_float_array_data(a: lean_obj_arg) -> lean_obj_res;
-    pub fn lean_copy_float_array(a: lean_obj_arg) -> lean_obj_res;
     pub fn lean_float_array_push(a: lean_obj_arg, d: f64) -> lean_obj_res;
 }

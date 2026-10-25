@@ -1,7 +1,7 @@
 # katzenpost-lean-sys
 [![crates.io](https://img.shields.io/crates/v/katzenpost-lean-sys)](https://crates.io/crates/katzenpost-lean-sys)
 [![docs.rs](https://img.shields.io/docsrs/katzenpost-lean-sys)](https://docs.rs/crate/katzenpost-lean-sys/latest)
-[![lean version](https://img.shields.io/badge/lean-4.33.1-lightgray.svg)](#lean-version-requirements)
+[![lean version](https://img.shields.io/badge/lean-4.35.0-lightgray.svg)](#lean-version-requirements)
 
 Rust bindings to [Lean 4](https://github.com/leanprover/lean4)'s C API
 
