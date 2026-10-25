@@ -20,10 +20,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: install elan
         run: |
+          # Outside the checkout, which cargo publish wants clean.
+          toolchain=$(cat lean-toolchain)
+          cd "$RUNNER_TEMP"
           curl -fsSLO "https://github.com/leanprover/elan/releases/download/v${ELAN_VERSION}/elan-x86_64-unknown-linux-gnu.tar.gz"
           echo "${ELAN_SHA256}  elan-x86_64-unknown-linux-gnu.tar.gz" | sha256sum -c -
           tar -xzf elan-x86_64-unknown-linux-gnu.tar.gz
-          ./elan-init -y --default-toolchain "$(cat lean-toolchain)" --no-modify-path
+          ./elan-init -y --default-toolchain "$toolchain" --no-modify-path
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - name: the tag is the crate's version
         if: startsWith(github.ref, 'refs/tags/v')
@@ -46,10 +49,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: install elan
         run: |
+          # Outside the checkout, which cargo publish wants clean.
+          toolchain=$(cat lean-toolchain)
+          cd "$RUNNER_TEMP"
           curl -fsSLO "https://github.com/leanprover/elan/releases/download/v${ELAN_VERSION}/elan-x86_64-unknown-linux-gnu.tar.gz"
           echo "${ELAN_SHA256}  elan-x86_64-unknown-linux-gnu.tar.gz" | sha256sum -c -
           tar -xzf elan-x86_64-unknown-linux-gnu.tar.gz
-          ./elan-init -y --default-toolchain "$(cat lean-toolchain)" --no-modify-path
+          ./elan-init -y --default-toolchain "$toolchain" --no-modify-path
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth
