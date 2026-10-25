@@ -99,9 +99,16 @@ pub use types::*;
 #[cfg(feature = "mimalloc")]
 extern "C" {
     // The Lean runtime's own mimalloc, so objects allocated here can be freed by the runtime.
-    fn mi_malloc_small(size: usize) -> *mut c_void;
+    fn mi_malloc(size: usize) -> *mut c_void;
     fn mi_free(p: *mut c_void);
+    /// Increments the heartbeat and allocates an object of `sz` bytes, a positive multiple of
+    /// [`LEAN_OBJECT_SIZE_DELTA`] of at most [`MI_SMALL_SIZE_MAX`], initializing `m_cs_sz`.
+    fn lean_alloc_small_object_core(sz: c_uint) -> *mut lean_object;
 }
+
+/// The largest size mimalloc allocates from its small pages.
+#[cfg(feature = "mimalloc")]
+pub const MI_SMALL_SIZE_MAX: usize = 128 * size_of::<*const c_void>();
 
 #[inline]
 pub fn lean_is_big_object_tag(tag: u8) -> bool {
@@ -188,12 +195,14 @@ pub fn lean_get_slot_idx(sz: c_uint) -> c_uint {
 
 #[inline]
 pub unsafe fn lean_alloc_small_object(sz: c_uint) -> *mut lean_object {
-    lean_inc_heartbeat();
     #[cfg(feature = "mimalloc")]
     {
-        // HACK: emulate behavior of small allocator to avoid `leangz` breakage for now
         let sz = lean_align(sz as usize, LEAN_OBJECT_SIZE_DELTA);
-        let mem = mi_malloc_small(sz);
+        if sz <= MI_SMALL_SIZE_MAX {
+            return lean_alloc_small_object_core(sz as c_uint);
+        }
+        lean_inc_heartbeat();
+        let mem = mi_malloc(sz);
         if mem.is_null() {
             lean_internal_panic_out_of_memory()
         }
@@ -203,6 +212,7 @@ pub unsafe fn lean_alloc_small_object(sz: c_uint) -> *mut lean_object {
     }
     #[cfg(not(feature = "mimalloc"))]
     {
+        lean_inc_heartbeat();
         let mem = libc::malloc(size_of::<usize>() + sz as usize) as *mut usize;
         if mem.is_null() {
             lean_internal_panic_out_of_memory()
@@ -325,6 +335,26 @@ pub const LEAN_RC_STICKY_DROP: c_int = c_int::MIN + 0x2000_0000;
 /// [`lean_inc_ref_huge_n`], which either applies the whole `n` or leaves the object frozen.
 pub const LEAN_RC_INC_MAX: usize = 0x10000;
 
+/// An overflowing single-threaded count lands at or below this, so that [`lean_mark_mt`] can still
+/// tell an object only one thread owns.
+pub const LEAN_RC_STUCK_ST: c_int = c_int::MIN + LEAN_RC_INC_MAX as c_int;
+
+/// Whether the count of `o` is thread-shared and not stuck, that is, one that increments still
+/// adjust. Read as unsigned, a persistent count (0), a single-threaded count and a stuck count all
+/// fall below every such count, so one comparison rejects them all.
+#[inline(always)]
+pub unsafe fn lean_is_unstuck_mt(o: *const lean_object) -> bool {
+    relaxed_rc_load(o) as c_uint > LEAN_RC_STICKY as c_uint
+}
+
+/// Whether the count of `o` is one no drop will ever free: persistent, or at or below the drop
+/// threshold. `o` must not be single-threaded.
+#[inline(always)]
+pub unsafe fn lean_is_never_freed(o: *const lean_object) -> bool {
+    debug_assert!(!lean_is_st(o));
+    relaxed_rc_load(o) as c_uint <= LEAN_RC_STICKY_DROP as c_uint
+}
+
 #[inline]
 pub unsafe fn lean_inc_ref_n(o: *mut lean_object, n: usize) {
     if n > LEAN_RC_INC_MAX {
@@ -333,9 +363,7 @@ pub unsafe fn lean_inc_ref_n(o: *mut lean_object, n: usize) {
         // Wraps an overflowing single-threaded count into the sticky range.
         let rc = lean_get_rc_mt_addr(o);
         *rc = (*rc as c_uint).wrapping_add(n as c_uint) as c_int
-    } else if relaxed_rc_load(o) as c_uint > LEAN_RC_STICKY as c_uint {
-        // Read as unsigned, a persistent count (0) and a sticky count both fall below every live
-        // thread-shared count, so one comparison rejects both.
+    } else if lean_is_unstuck_mt(o) {
         (*lean_get_rc_mt_addr(o).cast::<AtomicU32>()).fetch_sub(n as c_uint, Ordering::Relaxed);
     }
 }
@@ -512,6 +540,23 @@ pub unsafe fn lean_is_exclusive(o: *mut lean_object) -> bool {
 #[inline]
 pub unsafe fn lean_is_exclusive_obj(o: *mut lean_object) -> u8 {
     lean_is_exclusive(o) as u8
+}
+
+/// The linearity marker (see `Array.markLinear`) in the `m_other` header field of arrays, scalar
+/// arrays and strings.
+pub const LEAN_LINEAR_MARK_MASK: c_uint = 0x80;
+
+#[inline(always)]
+pub unsafe fn lean_is_marked_linear_core(o: b_lean_obj_arg) -> bool {
+    lean_ptr_other(o) & LEAN_LINEAR_MARK_MASK != 0
+}
+
+/// Marks `o`, which must be unique, as linear.
+#[inline(always)]
+pub unsafe fn lean_mark_linear_core(o: u_lean_obj_arg) {
+    debug_assert!(lean_is_exclusive(o));
+    let other = raw_field!(o, lean_object, m_other) as *mut u8;
+    *other |= LEAN_LINEAR_MARK_MASK as u8;
 }
 
 #[inline]

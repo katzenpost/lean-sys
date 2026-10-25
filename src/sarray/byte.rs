@@ -42,11 +42,7 @@ pub unsafe fn lean_byte_array_fget(a: b_lean_obj_arg, i: b_lean_obj_arg) -> u8 {
 
 #[inline(always)]
 pub unsafe fn lean_byte_array_uset(a: lean_obj_arg, i: usize, v: u8) -> *mut lean_object {
-    let r = if lean_is_exclusive(a) {
-        a
-    } else {
-        lean_copy_byte_array(a)
-    };
+    let r = lean_sarray_ensure_exclusive(a);
     let it = lean_sarray_cptr(r).add(i);
     *it = v;
     r
@@ -74,7 +70,6 @@ pub unsafe fn lean_byte_array_fset(a: lean_obj_arg, i: b_lean_obj_arg, v: u8) ->
 extern "C" {
     pub fn lean_byte_array_mk(a: lean_obj_arg) -> lean_obj_res;
     pub fn lean_byte_array_data(a: lean_obj_arg) -> lean_obj_res;
-    pub fn lean_copy_byte_array(a: lean_obj_arg) -> lean_obj_res;
     pub fn lean_byte_array_hash(a: b_lean_obj_arg) -> u64;
     pub fn lean_byte_array_push(a: lean_obj_arg, b: u8) -> lean_obj_res;
 }

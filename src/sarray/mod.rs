@@ -16,6 +16,13 @@ pub fn lean_alloc_sarray_would_overflow(elem_size: c_uint, capacity: usize) -> b
 
 #[inline]
 pub unsafe fn lean_alloc_sarray(elem_size: c_uint, size: usize, capacity: usize) -> lean_obj_res {
+    if elem_size >= LEAN_LINEAR_MARK_MASK {
+        lean_internal_panic(
+            c"scalar array element size is larger than 2^7"
+                .as_ptr()
+                .cast(),
+        )
+    }
     let o = lean_alloc_object(lean_usize_add_checked(
         core::mem::size_of::<lean_sarray_object>(),
         lean_usize_mul_checked(elem_size as usize, capacity),
@@ -29,7 +36,7 @@ pub unsafe fn lean_alloc_sarray(elem_size: c_uint, size: usize, capacity: usize)
 #[inline(always)]
 pub unsafe fn lean_sarray_elem_size(o: *const lean_object) -> c_uint {
     debug_assert!(lean_is_sarray(o));
-    lean_ptr_other(o)
+    lean_ptr_other(o) & !LEAN_LINEAR_MARK_MASK
 }
 
 #[inline(always)]
@@ -64,6 +71,43 @@ pub unsafe fn lean_sarray_cptr(o: *mut lean_object) -> *mut u8 {
     raw_field!(lean_to_sarray(o), lean_sarray_object, m_data) as *mut _
 }
 
+#[inline(always)]
+pub unsafe fn lean_sarray_is_marked_linear(o: b_lean_obj_arg) -> bool {
+    debug_assert!(lean_is_sarray(o));
+    lean_is_marked_linear_core(o)
+}
+
+#[inline(always)]
+pub unsafe fn lean_sarray_mark_linear_core(o: u_lean_obj_arg) {
+    debug_assert!(lean_is_sarray(o));
+    lean_mark_linear_core(o)
+}
+
+#[inline]
+pub unsafe fn lean_sarray_ensure_exclusive(a: lean_obj_arg) -> lean_obj_res {
+    if lean_is_exclusive(a) {
+        a
+    } else {
+        lean_copy_sarray_nonlinear(a, lean_sarray_capacity(a))
+    }
+}
+
+#[inline]
+pub unsafe fn lean_sarray_mark_linear(a: lean_obj_arg) -> lean_obj_res {
+    let r = lean_sarray_ensure_exclusive(a);
+    lean_sarray_mark_linear_core(r);
+    r
+}
+
+#[inline]
+pub unsafe fn lean_sarray_propagate_mark(src: b_lean_obj_arg, dst: lean_obj_arg) -> lean_obj_res {
+    if !lean_sarray_is_marked_linear(src) {
+        dst
+    } else {
+        lean_sarray_mark_linear(dst)
+    }
+}
+
 #[inline]
 pub unsafe fn lean_sarray_eq(a1: b_lean_obj_arg, a2: b_lean_obj_arg) -> bool {
     debug_assert_eq!(lean_sarray_elem_size(a1), lean_sarray_elem_size(a2));
@@ -76,6 +120,10 @@ pub unsafe fn lean_sarray_dec_eq(a1: b_lean_obj_arg, a2: b_lean_obj_arg) -> u8 {
 }
 
 extern "C" {
+    pub fn lean_copy_sarray(a: lean_obj_arg, cap: usize) -> lean_obj_res;
+    /// Equivalent to [`lean_copy_sarray`] but used as a gadget to spot scalar array
+    /// non-linearities in profiles. Panics if `a` is marked linear.
+    pub fn lean_copy_sarray_nonlinear(a: lean_obj_arg, cap: usize) -> lean_obj_res;
     #[cold]
     pub fn lean_sarray_eq_cold(a1: b_lean_obj_arg, a2: b_lean_obj_arg) -> bool;
 }

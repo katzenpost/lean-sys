@@ -24,6 +24,43 @@ pub unsafe fn lean_string_byte_size(o: *mut lean_object) -> usize {
     core::mem::size_of::<lean_string_object>() + lean_string_capacity(o)
 }
 
+#[inline(always)]
+pub unsafe fn lean_string_is_marked_linear(o: b_lean_obj_arg) -> bool {
+    debug_assert!(lean_is_string(o));
+    lean_is_marked_linear_core(o)
+}
+
+#[inline(always)]
+pub unsafe fn lean_string_mark_linear_core(o: u_lean_obj_arg) {
+    debug_assert!(lean_is_string(o));
+    lean_mark_linear_core(o)
+}
+
+#[inline]
+pub unsafe fn lean_string_ensure_exclusive(s: lean_obj_arg) -> lean_obj_res {
+    if lean_is_exclusive(s) {
+        s
+    } else {
+        lean_copy_string_nonlinear(s, lean_string_capacity(s))
+    }
+}
+
+#[inline]
+pub unsafe fn lean_string_mark_linear(s: lean_obj_arg) -> lean_obj_res {
+    let r = lean_string_ensure_exclusive(s);
+    lean_string_mark_linear_core(r);
+    r
+}
+
+#[inline]
+pub unsafe fn lean_string_propagate_mark(src: b_lean_obj_arg, dst: lean_obj_arg) -> lean_obj_res {
+    if !lean_string_is_marked_linear(src) {
+        dst
+    } else {
+        lean_string_mark_linear(dst)
+    }
+}
+
 /** instance : inhabited char := ⟨'A'⟩ */
 #[inline(always)]
 pub fn lean_char_default_value() -> c_char {
@@ -130,6 +167,10 @@ extern "C" {
     pub fn lean_mk_string_from_bytes_unchecked(s: *const u8, sz: usize) -> lean_obj_res;
     pub fn lean_mk_ascii_string_unchecked(s: *const u8) -> lean_obj_res;
     pub fn lean_mk_string(s: *const u8) -> lean_obj_res;
+    pub fn lean_copy_string(s: lean_obj_arg, cap: usize) -> lean_obj_res;
+    /// Equivalent to [`lean_copy_string`] but used as a gadget to spot string non-linearities in
+    /// profiles. Panics if `s` is marked linear.
+    pub fn lean_copy_string_nonlinear(s: lean_obj_arg, cap: usize) -> lean_obj_res;
     pub fn lean_string_push(s: lean_obj_arg, c: u32) -> lean_obj_res;
     pub fn lean_string_append(s1: lean_obj_arg, s2: lean_obj_arg) -> lean_obj_res;
     pub fn lean_string_mk(cs: lean_obj_arg) -> lean_obj_res;
